@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef } from "react";
+import InvisibleHotspotModal from "./Modal.jsx";
 
 export default function Simulator() {
-  const [silo5, setSilo5] = useState(75.8);
-  const [silo6, setSilo6] = useState(39.8);
+  const [silo5, setSilo5] = useState(50);
+  const [silo6, setSilo6] = useState(25);
   const [v5Open, setV5Open] = useState(false);
   const [v5POpen, setV5POpen] = useState(false);
   const [v6Open, setV6Open] = useState(false);
@@ -11,8 +12,8 @@ export default function Simulator() {
   const [blowerTripped, setBlowerTripped] = useState(false);
 
   useEffect(() => {
-    // 1. RAČUNANJE BAZNOG OPTEREĆENJA (Količina cementa)
-    let baseLoad = 40.0 + silo5 * 0.36 + silo6 * 0.36;
+    // 1. RAČUNANJE BAZNOG OPTEREĆENJA (Količina cementa u sistemu)
+    let baseLoad = 45.0 + silo5 * 0.6 + silo6 * 0.6;
 
     // Brojimo aktivne ventile
     let otvoreniOtvori = 0;
@@ -20,35 +21,32 @@ export default function Simulator() {
     if (v5POpen) otvoreniOtvori++;
     if (v6Open) otvoreniOtvori++;
 
-    // 2. LOGIKA RASTERECENJA NA OSNOVU VENTILA
+    // 2. LINEARNO RASTERECENJE (Fizika fluida bez skokova)
     let calculatedBlower = baseLoad;
 
     if (otvoreniOtvori > 0) {
-      if (baseLoad >= 105.0) {
-        calculatedBlower -= otvoreniOtvori * 25.0;
-      } else if (baseLoad >= 90.0) {
-        calculatedBlower -= otvoreniOtvori * 15.0;
-      } else {
-        calculatedBlower -= otvoreniOtvori * 8.0;
-      }
+      // Svaki otvoreni ventil glatko smanjuje pritisak za procenat trenutne snage sistema
+      // Na ovaj način nema skokova unazad, nego kriva raste glatko i paralelno sa slajderima
+      let faktorRasterecenja = 0.15; // 15% slabljenja po ventilu (prilagodi po želji)
+      calculatedBlower = baseLoad * (1 - otvoreniOtvori * faktorRasterecenja);
     }
 
-    // Apsolutni minimum fizike praznog hoda
-    if (calculatedBlower < 45.0) {
-      calculatedBlower = 45.0;
+    // Apsolutni minimum fizike praznog hoda duvaljke (kad duva u prazno)
+    if (calculatedBlower < 40.0) {
+      calculatedBlower = 40.0;
     }
 
     // Zaokružujemo na jednu decimalu
     calculatedBlower = parseFloat(calculatedBlower.toFixed(1));
 
-    // 3. SEKVENCALNI TRIP (ZABRANA RADA PREKO 102%)
+    // 3. SEKVENCALNI TRIP (ZABRANA RADA PREKO 105%)
     if (blowerTripped) {
       setBlower(0.0);
       setFlow(false);
       return;
     }
 
-    if (calculatedBlower > 102.0) {
+    if (calculatedBlower > 105.0) {
       setBlowerTripped(true);
       setBlower(0.0);
       setFlow(false);
@@ -58,54 +56,26 @@ export default function Simulator() {
     // Upisujemo pritisak duvaljke ako je sve u redu
     setBlower(calculatedBlower);
 
-    // 4. LOGIKA PROTOKA (SEMAFORI S URAČUNATIM KOLIČINAMA I ZONAMA OD 10%)
-    const isSilo5Active = v5Open || v5POpen;
-    const isSilo6Active = v6Open;
+    // 4. NOVA, PROČIŠĆENA LOGIKA PROTOKA (ČISTI USLOVI)
+    const isSilo5HasMaterial = silo5 > 0;
+    const isSilo6HasMaterial = silo6 > 0;
 
-    // Evaluacija da li Silos 5 uopšte može davati protok na osnovu količine i pritiska
-    let silo5CanFlow = false;
-    if (isSilo5Active) {
-      if (silo5 > 0) {
-        if (silo5 <= 10.0) {
-          // Ako je u silosu 10% i manje, mora biti pritisak veći od 65%
-          if (calculatedBlower > 65.0) silo5CanFlow = true;
-        } else {
-          // Ako ima više od 10% materijala, količina je OK
-          silo5CanFlow = true;
-        }
-      }
-    }
-
-    // Evaluacija da li Silos 6 uopšte može davati protok na osnovu količine i pritiska
-    let silo6CanFlow = false;
-    if (isSilo6Active) {
-      if (silo6 > 0) {
-        if (silo6 <= 10.0) {
-          // Ako je u silosu 10% i manje, mora biti pritisak veći od 65%
-          if (calculatedBlower > 65.0) silo6CanFlow = true;
-        } else {
-          // Ako ima više od 10% materijala, količina je OK
-          silo6CanFlow = true;
-        }
-      }
-    }
+    // Provjera da li uopšte imamo materijala u otvorenim linijama
+    let imaMaterijalaUOtvorima = false;
+    if (v5Open && isSilo5HasMaterial) imaMaterijalaUOtvorima = true;
+    if (v5POpen && isSilo5HasMaterial) imaMaterijalaUOtvorima = true;
+    if (v6Open && isSilo6HasMaterial) imaMaterijalaUOtvorima = true;
 
     let isFlowGood = false;
 
-    // Kombinovanje sa osnovnim pravilima pritiska (60% za jedan silos, 75% za oba)
-    if (isSilo5Active && isSilo6Active) {
-      // Oba silosa otvorena -> oba moraju proći količinsku provjeru + pritisak preko 75%
-      if (silo5CanFlow && silo6CanFlow && calculatedBlower > 65.0) {
+    if (otvoreniOtvori >= 2) {
+      // 2 ili više otvora otvorena -> duvaljka mora biti veća od 60%
+      if (calculatedBlower > 60.0 && imaMaterijalaUOtvorima) {
         isFlowGood = true;
       }
-    } else if (isSilo5Active) {
-      // Samo Silos 5 otvoren -> mora proći svoju količinsku provjeru + pritisak preko 60%
-      if (silo5CanFlow && calculatedBlower > 60.0) {
-        isFlowGood = true;
-      }
-    } else if (isSilo6Active) {
-      // Samo Silos 6 otvoren -> mora proći svoju količinsku provjeru + pritisak preko 60%
-      if (silo6CanFlow && calculatedBlower > 60.0) {
+    } else if (otvoreniOtvori === 1) {
+      // Tačno 1 otvor otvoren -> duvaljka mora biti veća od 55%
+      if (calculatedBlower > 50.0 && imaMaterijalaUOtvorima) {
         isFlowGood = true;
       }
     }
@@ -115,7 +85,7 @@ export default function Simulator() {
 
   const blowerColor = blowerTripped
     ? "#cc0000"
-    : blower > 102.0
+    : blower > 105.0
       ? "#cc0000"
       : blower < 60.0
         ? "#b45309"
@@ -138,8 +108,24 @@ export default function Simulator() {
         background: "#000",
       }}
     >
+      <InvisibleHotspotModal
+        top="36.8%"
+        left="53.8%"
+        width="8%"
+        height="3%"
+        modalImgSrc="/detaljno-duvaljka.jpg"
+        altText="Detaljna shema kompresora"
+      />
+      <InvisibleHotspotModal
+        top="36.8%"
+        left="71.3%"
+        width="8%"
+        height="3%"
+        modalImgSrc="/detaljno-duvaljka.jpg"
+        altText="Detaljna shema kompresora"
+      />
       <img
-        src="/scada-bg.jpg"
+        src="/scada-bg1.jpg"
         alt="SCADA"
         style={{
           position: "absolute",
@@ -351,9 +337,7 @@ export default function Simulator() {
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            background: v5Open
-              ? "rgba(16, 115, 52, 0.25)"
-              : "rgba(157, 28, 28, 0.2)",
+            background: v5Open ? "rgba(22,163,74,0.25)" : "rgba(220,38,38,0.2)",
             border: `2px solid ${v5Open ? "#16a34a" : "#dc2626"}`,
             borderRadius: "3px",
           }}
@@ -363,12 +347,13 @@ export default function Simulator() {
               fontFamily: "monospace",
               fontWeight: "bold",
               fontSize: "1.8vh",
+              textAlign: "center",
               padding: "2px 6px",
               background: "white",
               color: v5Open ? "#16a34a" : "#dc2626",
             }}
           >
-            V5 RINFUZA: {v5Open ? "OTVOREN" : "ZATVOREN"}
+            {v5Open ? "OTVOREN" : "ZATVOREN"}
           </span>
         </div>
 
@@ -402,7 +387,7 @@ export default function Simulator() {
               color: v5POpen ? "#16a34a" : "#dc2626",
             }}
           >
-            V5 PAKOVANJE: {v5POpen ? "OTVOREN" : "ZATVOREN"}
+            {v5POpen ? "OTVOREN" : "ZATVOREN"}
           </span>
         </div>
 
@@ -434,7 +419,7 @@ export default function Simulator() {
               color: v6Open ? "#16a34a" : "#dc2626",
             }}
           >
-            V6 ISTOVAR: {v6Open ? "OTVOREN" : "ZATVOREN"}
+            {v6Open ? "OTVOREN" : "ZATVOREN"}
           </span>
         </div>
 
@@ -459,10 +444,10 @@ export default function Simulator() {
               boxShadow: "0 0 20px rgba(239,68,68,0.5)",
             }}
           >
-            ❌ RELEJ PREOPTEREĆENJA OKINUO!
+            ❌ GREŠKA PREOPTEREĆENJA!
             <br />
             <span style={{ fontSize: "1.6vh", color: "#fbbf24" }}>
-              Silosi prešli kritičnu granicu opterećenja linije (&gt;102%)
+              Duvaljka prešla kritičnu granicu opterećenja linije (&gt;105%)
             </span>
             <br />
             <button
