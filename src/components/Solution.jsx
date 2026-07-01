@@ -18,11 +18,14 @@ export default function Solution() {
   const [blower5Tripped, setBlower5Tripped] = useState(false);
   const [blower6Tripped, setBlower6Tripped] = useState(false);
 
+  const [hz5, setHz5] = useState(50.0);
+  const [hz6, setHz6] = useState(50.0);
+
   useEffect(() => {
     // =========================================================================
-    // 1. LINIJA 5 LOGIKA (Silos 5 -> V5 i V5P -> Duvaljka 5)
+    // 1. LINIJA 5 LOGIKA (Silos 5 -> V5 i V5P -> Duvaljka 5 sa Frekventnim)
     // =========================================================================
-    let baseLoad5 = 40.0 + silo5 * 0.7; // Zavisi isključivo od Silosa 5
+    let baseLoad5 = 50.0 + silo5 * 0.5; // Sirovo opterećenje iz silosa
 
     let otvoreniOtvori5 = 0;
     if (v5Open) otvoreniOtvori5++;
@@ -30,27 +33,38 @@ export default function Solution() {
 
     let calculatedBlower5 = baseLoad5;
     if (otvoreniOtvori5 > 0) {
-      let faktorRasterecenja5 = 0.15; // Glatko rasterećenje po ventilu
+      let faktorRasterecenja5 = 0.18;
       calculatedBlower5 =
         baseLoad5 * (1 - otvoreniOtvori5 * faktorRasterecenja5);
     }
 
-    if (calculatedBlower5 < 40.0) calculatedBlower5 = 40.0; // Minimum praznog hoda
+    // --- FREKVENTNI REGULATOR LINIJE 5 ---
+    let trenutnaFrekvencija5 = 50.0;
+    if (calculatedBlower5 > 80.0) {
+      trenutnaFrekvencija5 = 50.0 - (calculatedBlower5 - 80.0) * 0.5;
+      if (trenutnaFrekvencija5 < 25.0) trenutnaFrekvencija5 = 25.0;
+    }
+    setHz5(parseFloat(trenutnaFrekvencija5.toFixed(1)));
+
+    // VFD efekat peglanja opterećenja
+    let vfdKorekcija5 = trenutnaFrekvencija5 / 50.0;
+    calculatedBlower5 = calculatedBlower5 * vfdKorekcija5;
+
+    if (calculatedBlower5 < 40.0) calculatedBlower5 = 40.0;
     calculatedBlower5 = parseFloat(calculatedBlower5.toFixed(1));
 
-    // Trip logika za Duvaljku 5
+    // Trip i protok za Liniju 5
     if (blower5Tripped || calculatedBlower5 > 105.0) {
       if (calculatedBlower5 > 105.0) setBlower5Tripped(true);
       setBlower5(0.0);
+      setHz5(0.0);
       setFlow5(false);
     } else {
       setBlower5(calculatedBlower5);
-
-      // Protok za Silos 5 (Tačno 1 ili više otvora -> prag 55% ako ima materijala)
       const isSilo5HasMaterial = silo5 > 0;
       if (
         otvoreniOtvori5 > 0 &&
-        calculatedBlower5 > 55.0 &&
+        calculatedBlower5 > 45.0 &&
         isSilo5HasMaterial
       ) {
         setFlow5(true);
@@ -60,35 +74,46 @@ export default function Solution() {
     }
 
     // =========================================================================
-    // 2. LINIJA 6 LOGIKA (Silos 6 -> V6 -> Duvaljka 6)
+    // 2. LINIJA 6 LOGIKA (Silos 6 -> V6 -> Duvaljka 6 sa Frekventnim)
     // =========================================================================
-    let baseLoad6 = 50.0 + silo6 * 0.7; // Zavisi isključivo od Silosa 6
+    let baseLoad6 = 50.0 + silo6 * 0.5;
 
     let otvoreniOtvori6 = v6Open ? 1 : 0;
 
     let calculatedBlower6 = baseLoad6;
     if (otvoreniOtvori6 > 0) {
-      let faktorRasterecenja6 = 0.18; // Rasterećenje za V6 ventil
+      let faktorRasterecenja6 = 0.18;
       calculatedBlower6 =
         baseLoad6 * (1 - otvoreniOtvori6 * faktorRasterecenja6);
     }
 
+    // --- FREKVENTNI REGULATOR LINIJE 6 ---
+    let trenutnaFrekvencija6 = 50.0;
+    if (calculatedBlower6 > 80.0) {
+      trenutnaFrekvencija6 = 50.0 - (calculatedBlower6 - 80.0) * 0.5;
+      if (trenutnaFrekvencija6 < 25.0) trenutnaFrekvencija6 = 25.0;
+    }
+    setHz6(parseFloat(trenutnaFrekvencija6.toFixed(1)));
+
+    // VFD efekat peglanja opterećenja
+    let vfdKorekcija6 = trenutnaFrekvencija6 / 50.0;
+    calculatedBlower6 = calculatedBlower6 * vfdKorekcija6;
+
     if (calculatedBlower6 < 40.0) calculatedBlower6 = 40.0;
     calculatedBlower6 = parseFloat(calculatedBlower6.toFixed(1));
 
-    // Trip logika za Duvaljku 6
+    // Trip i protok za Liniju 6
     if (blower6Tripped || calculatedBlower6 > 105.0) {
       if (calculatedBlower6 > 105.0) setBlower6Tripped(true);
       setBlower6(0.0);
+      setHz6(0.0);
       setFlow6(false);
     } else {
       setBlower6(calculatedBlower6);
-
-      // Protok za Silos 6 (Prag 55% pritiska i da ima materijala)
       const isSilo6HasMaterial = silo6 > 0;
       if (
         otvoreniOtvori6 > 0 &&
-        calculatedBlower6 > 55.0 &&
+        calculatedBlower6 > 45.0 &&
         isSilo6HasMaterial
       ) {
         setFlow6(true);
@@ -105,18 +130,22 @@ export default function Solution() {
     return "#006600";
   };
 
-  // Statusna poruka semafora kombinuje oba sistema
-  const isAnyBlowerTripped = blower5Tripped || blower6Tripped;
-  const isAnyValveOpen = v5Open || v5POpen || v6Open;
-  const globalFlow = flow5 || flow6;
+  // Statusne poruke za dva odvojena semafora
+  const statusMsg5 = blower5Tripped
+    ? "ALARM — D5 PREOPTEREĆENJE!"
+    : !(v5Open || v5POpen)
+      ? "VENTILI S5 ZATVORENI"
+      : flow5
+        ? "SILOS 5: PROTOK OPTIMIZOVAN (OK)"
+        : "NIZAK PRITISAK / NEMA MATERIJALA";
 
-  const statusMsg = isAnyBlowerTripped
-    ? "ALARM — PREOPTEREĆENJE DUVALJKE U SISTEMU!"
-    : !isAnyValveOpen
-      ? "SVI VENTILI ZATVORENI — LINIJE U MIROVANJU"
-      : globalFlow
-        ? "🚀 R4 PROTOK OPTIMIZOVAN I RAZDVOJEN (OK)"
-        : "NEDOVOLJAN PRITISAK / NEMA MATERIJALA";
+  const statusMsg6 = blower6Tripped
+    ? "ALARM — D6 PREOPTEREĆENJE!"
+    : !v6Open
+      ? "VENTIL S6 ZATVOREN"
+      : flow6
+        ? "SILOS 6: PROTOK OPTIMIZOVAN (OK)"
+        : "NIZAK PRITISAK / NEMA MATERIJALA";
 
   return (
     <div
@@ -315,14 +344,14 @@ export default function Solution() {
           />
         </div>
 
-        {/* ===== DISPLEJ DUVALJKE 5 (Pozicioniran na starom mjestu) ===== */}
+        {/* ===== DISPLEJ DUVALJKE 5 ===== */}
         <div
           style={{
             position: "absolute",
             top: "22.85%",
             left: "41.95%",
-            width: "4.5%",
-            height: "2%",
+            width: "6%",
+            height: "2.2%",
             background: "white",
             display: "flex",
             alignItems: "center",
@@ -334,16 +363,24 @@ export default function Solution() {
             border: blower5Tripped ? "2px solid #cc0000" : "1px solid #000",
           }}
         >
+          <span
+            style={{
+              fontSize: "1.3vh",
+              color: blower5Tripped ? "#64748b" : "#38bdf8",
+            }}
+          >
+            {hz5.toFixed(1)} Hz|
+          </span>
           {blower5.toFixed(1)}%
         </div>
 
-        {/* ===== DISPLEJ DUVALJKE 6 (Dodan pored za novu liniju) ===== */}
+        {/* ===== DISPLEJ DUVALJKE 6 ===== */}
         <div
           style={{
             position: "absolute",
             top: "16.6%",
             left: "63.35%",
-            width: "4.5%",
+            width: "6%",
             height: "2%",
             background: "white",
             display: "flex",
@@ -356,6 +393,14 @@ export default function Solution() {
             border: blower6Tripped ? "2px solid #cc0000" : "1px solid #000",
           }}
         >
+          <span
+            style={{
+              fontSize: "1.3vh",
+              color: blower6Tripped ? "#64748b" : "#38bdf8",
+            }}
+          >
+            {hz6.toFixed(1)} Hz|
+          </span>
           {blower6.toFixed(1)}%
         </div>
 
@@ -543,61 +588,130 @@ export default function Solution() {
           </div>
         )}
 
-        {/* ===== KONTROLNI SEMAFOR PROTOKA ===== */}
+        {/* ===== RAZDVOJENI SEMAFORI PROTOKA (DVA ODVOJENA SISTEMA) ===== */}
+
+        {/* SEMAFOR LINIJE 5 (Pozicioniran lijevo na dnu) */}
         <div
           style={{
             position: "absolute",
             bottom: "12%",
-            left: "25%",
-            width: "32%",
+            left: "12%",
+            width: "24%",
             background: "rgba(0,0,0,0.88)",
             border: "1px solid #374151",
             borderRadius: "6px",
-            padding: "8px 16px",
+            padding: "8px 14px",
             display: "flex",
             alignItems: "center",
-            gap: "12px",
+            gap: "10px",
           }}
         >
           <div
             style={{
-              width: "16px",
-              height: "16px",
+              width: "14px",
+              height: "14px",
               borderRadius: "50%",
-              background: !globalFlow ? "#ef4444" : "#1f2937",
-              boxShadow: !globalFlow ? "0 0 8px #ef4444" : "none",
+              background: !flow5 ? "#ef4444" : "#1f2937",
+              boxShadow: !flow5 ? "0 0 8px #ef4444" : "none",
             }}
           />
           <div
             style={{
-              width: "16px",
-              height: "16px",
+              width: "14px",
+              height: "14px",
               borderRadius: "50%",
-              background: globalFlow ? "#22c55e" : "#1f2937",
-              boxShadow: globalFlow ? "0 0 8px #22c55e" : "none",
+              background: flow5 ? "#22c55e" : "#1f2937",
+              boxShadow: flow5 ? "0 0 8px #22c55e" : "none",
             }}
           />
           <div>
             <div
               style={{
-                fontSize: "0.9vh",
-                color: "#6b7280",
+                fontSize: "0.85vh",
+                color: "#9ca3af",
                 fontFamily: "monospace",
                 fontWeight: "bold",
-                letterSpacing: "1px",
+                letterSpacing: "0.5px",
               }}
             >
-              R4 RAZDVOJENI SISTEM PROTOKA
+              PROTOK IZ SILOSA 5 — S5
             </div>
             <div
               style={{
-                fontSize: "1.2vh",
+                fontSize: "1.1vh",
                 fontFamily: "monospace",
                 fontWeight: "bold",
-                color: globalFlow ? "#4ade80" : "#f87171",
+                color: flow5
+                  ? "#4ade80"
+                  : blower5Tripped
+                    ? "#ef4444"
+                    : "#9ca3af",
               }}
             >
-              {statusMsg}
+              {statusMsg5}
+            </div>
+          </div>
+        </div>
+
+        {/* SEMAFOR LINIJE 6 (Pozicioniran desno na dnu) */}
+        <div
+          style={{
+            position: "absolute",
+            bottom: "12%",
+            left: "38%",
+            width: "24%",
+            background: "rgba(0,0,0,0.88)",
+            border: "1px solid #374151",
+            borderRadius: "6px",
+            padding: "8px 14px",
+            display: "flex",
+            alignItems: "center",
+            gap: "10px",
+          }}
+        >
+          <div
+            style={{
+              width: "14px",
+              height: "14px",
+              borderRadius: "50%",
+              background: !flow6 ? "#ef4444" : "#1f2937",
+              boxShadow: !flow6 ? "0 0 8px #ef4444" : "none",
+            }}
+          />
+          <div
+            style={{
+              width: "14px",
+              height: "14px",
+              borderRadius: "50%",
+              background: flow6 ? "#22c55e" : "#1f2937",
+              boxShadow: flow6 ? "0 0 8px #22c55e" : "none",
+            }}
+          />
+          <div>
+            <div
+              style={{
+                fontSize: "0.85vh",
+                color: "#9ca3af",
+                fontFamily: "monospace",
+                fontWeight: "bold",
+                letterSpacing: "0.5px",
+              }}
+            >
+              PROTOK IZ SILOSA 6 - S6
+            </div>
+            <div
+              style={{
+                fontSize: "1.1vh",
+                fontFamily: "monospace",
+                fontWeight: "bold",
+                color: flow6
+                  ? "#4ade80"
+                  : blower6Tripped
+                    ? "#ef4444"
+                    : "#9ca3af",
+              }}
+            >
+              {statusMsg6}
             </div>
           </div>
         </div>

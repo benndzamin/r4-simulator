@@ -2,8 +2,8 @@ import { useState, useEffect, useRef } from "react";
 import InvisibleHotspotModal from "./Modal.jsx";
 
 export default function Simulator() {
-  const [silo5, setSilo5] = useState(50);
-  const [silo6, setSilo6] = useState(25);
+  const [silo5, setSilo5] = useState(75.8);
+  const [silo6, setSilo6] = useState(35.8);
   const [v5Open, setV5Open] = useState(false);
   const [v5POpen, setV5POpen] = useState(false);
   const [v6Open, setV6Open] = useState(false);
@@ -13,7 +13,7 @@ export default function Simulator() {
 
   useEffect(() => {
     // 1. RAČUNANJE BAZNOG OPTEREĆENJA (Količina cementa u sistemu)
-    let baseLoad = 45.0 + silo5 * 0.6 + silo6 * 0.6;
+    let baseLoad = 35.0 + silo5 * 0.5 + silo6 * 0.5;
 
     // Brojimo aktivne ventile
     let otvoreniOtvori = 0;
@@ -27,7 +27,7 @@ export default function Simulator() {
     if (otvoreniOtvori > 0) {
       // Svaki otvoreni ventil glatko smanjuje pritisak za procenat trenutne snage sistema
       // Na ovaj način nema skokova unazad, nego kriva raste glatko i paralelno sa slajderima
-      let faktorRasterecenja = 0.15; // 15% slabljenja po ventilu (prilagodi po želji)
+      let faktorRasterecenja = 0.18; // 18% slabljenja po ventilu (prilagodi po želji)
       calculatedBlower = baseLoad * (1 - otvoreniOtvori * faktorRasterecenja);
     }
 
@@ -307,8 +307,8 @@ export default function Simulator() {
           style={{
             position: "absolute",
             top: "22.9%",
-            left: "42%",
-            width: "4.5%",
+            left: "41.9%",
+            width: "4.6%",
             height: "2%",
             background: "white",
             display: "flex",
